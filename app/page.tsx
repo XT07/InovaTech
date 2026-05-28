@@ -1,256 +1,128 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Image from "next/image";
+import Link from "next/link";
+import { dashboard, DashboardData, LucroPorCategoria } from "@/lib/api";
 
-// 1. Definição da estrutura dos dados que vêm da API
-interface DashboardData {
-  totalFornecedores: number;
-  comprasPendentes: number;
-  lucroEstimado: number;
-  ultimasMovimentacoes: { id: number; fornecedor: string; valor: number; status: string }[];
+function fmt(v: number) {
+  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
 export default function Home() {
   const [dados, setDados] = useState<DashboardData | null>(null);
+  const [lucro, setLucro] = useState<LucroPorCategoria[]>([]);
   const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState<string | null>(null);
 
-  // 2. Simulação da requisição para a API
   useEffect(() => {
-    async function carregarDadosDashboard() {
+    async function carregar() {
       try {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-
-        const dadosSimulados: DashboardData = {
-          totalFornecedores: 42,
-          comprasPendentes: 15,
-          lucroEstimado: 24850.0,
-          ultimasMovimentacoes: [
-            { id: 1, fornecedor: "Distribuidora Alfa", valor: 4500, status: "Concluído" },
-            { id: 2, fornecedor: "Logística Brasil", valor: 1200, status: "Pendente" },
-            { id: 3, fornecedor: "Indústria Metalúrgica X", valor: 8900, status: "Concluído" },
-          ],
-        };
-
-        setDados(dadosSimulados);
-      } catch (error) {
-        console.error("Erro ao buscar dados da API", error);
+        const [d, l] = await Promise.all([
+          dashboard.visaoGeral(),
+          dashboard.lucroPorCategoria(),
+        ]);
+        setDados(d);
+        setLucro(l);
+      } catch (e: unknown) {
+        setErro(e instanceof Error ? e.message : "Erro ao carregar dados");
       } finally {
         setLoading(false);
       }
     }
+    carregar();
+  }, []);
 
-    carregarDadosDashboard();
-  } ,[] );
-
-  if (loading) {
-    return (
-      <div style={styles.container}>
-        <p style={styles.loadingText}>Carregando dados do painel...</p>
-      </div>
-    );
-  }
+  if (loading) return <div className="flex items-center justify-center h-64 text-gray-500">Carregando painel...</div>;
+  if (erro) return <div className="p-8 text-red-600 bg-red-50 rounded-xl m-8">Erro: {erro} — verifique se a API está rodando em <code>http://localhost:8080</code></div>;
 
   return (
-    <div style={styles.container}>
-      {/* Topo / Navbar Simples */}
-      <header style={styles.header}>
-        <div style={styles.logoWrapper}>
-          <Image
-            src="/Captura de tela 2026-05-27 204009.png"
-            alt="Gestão de Fornecedores"
-            width={300}
-            height={100}
-            style={styles.logo}
-            priority
-          />
-        </div>
-        <h1 style={styles.title}>Painel de Controle</h1>
-      </header>
+    <div className="p-8 max-w-6xl mx-auto space-y-8">
+      <div>
+        <h1 className="text-2xl font-semibold text-gray-900">Painel de Controle</h1>
+        <p className="text-sm text-gray-500 mt-1">Visão geral do sistema InovaTech</p>
+      </div>
 
-      <main style={styles.main}>
-        {/* 3. Grid de Cards com os Indicadores da API */}
-        <section style={styles.metricsGrid}>
-          <div style={styles.card}>
-            <p style={styles.cardLabel}>Total de Fornecedores</p>
-            <h2 style={styles.cardValue}>{dados?.totalFornecedores}</h2>
-          </div>
+      {/* Métricas principais */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <MetricCard label="Fornecedores ativos" value={dados!.fornecedores.ativos} sub={`${dados!.fornecedores.total} total`} color="blue" />
+        <MetricCard label="Produtos cadastrados" value={dados!.produtos.total} sub={`${dados!.produtos.estoque_baixo} com estoque baixo`} color={dados!.produtos.estoque_baixo > 0 ? "red" : "green"} />
+        <MetricCard label="Saldo financeiro" value={fmt(dados!.financeiro.saldo)} sub={`Entradas: ${fmt(dados!.financeiro.total_entradas)}`} color={dados!.financeiro.saldo >= 0 ? "green" : "red"} />
+        <MetricCard label="Documentos" value={dados!.documentos.total} sub={`${dados!.documentos.vencendo_30_dias} vencem em 30 dias`} color={dados!.documentos.vencendo_30_dias > 0 ? "amber" : "green"} />
+      </div>
 
-          <div style={styles.card}>
-            <p style={styles.cardLabel}>Compras Pendentes</p>
-            <h2 style={{ ...styles.cardValue, color: "#e53e3e" }}>{dados?.comprasPendentes}</h2>
-          </div>
+      {/* Acesso rápido */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { href: "/fornecedores", label: "Fornecedores", icon: "🏭" },
+          { href: "/produtos", label: "Produtos", icon: "📦" },
+          { href: "/custos", label: "Custos", icon: "💰" },
+          { href: "/documentos", label: "Documentos", icon: "📄" },
+        ].map((item) => (
+          <Link key={item.href} href={item.href} className="bg-white border border-gray-200 rounded-xl p-4 hover:border-blue-400 hover:shadow-sm transition-all flex items-center gap-3">
+            <span className="text-2xl">{item.icon}</span>
+            <span className="font-medium text-gray-700">{item.label}</span>
+          </Link>
+        ))}
+      </div>
 
-          <div style={styles.card}>
-            <p style={styles.cardLabel}>Lucro Estimado</p>
-            <h2 style={{ ...styles.cardValue, color: "#38a169" }}>
-              R$ {dados?.lucroEstimado.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-            </h2>
-          </div>
-        </section>
-
-        {/* 4. Tabela de Últimas Movimentações vindas da API */}
-        <section style={styles.tableSection}>
-          <h3 style={styles.sectionTitle}>Últimas Movimentações de Compras</h3>
-          <div style={styles.tableWrapper}>
-            <table style={styles.table}>
+      {/* Lucro por categoria */}
+      {lucro.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-6">
+          <h2 className="text-base font-semibold text-gray-800 mb-4">Resultado por Categoria de Fornecedor</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
               <thead>
-                <tr style={styles.thRow}>
-                  <th style={styles.th}>Fornecedor</th>
-                  <th style={styles.th}>Valor</th>
-                  <th style={styles.th}>Status</th>
+                <tr className="border-b border-gray-100 text-gray-500 text-left">
+                  <th className="pb-2 font-medium">Categoria</th>
+                  <th className="pb-2 font-medium text-right">Entradas</th>
+                  <th className="pb-2 font-medium text-right">Saídas</th>
+                  <th className="pb-2 font-medium text-right">Saldo</th>
                 </tr>
               </thead>
               <tbody>
-                {dados?.ultimasMovimentacoes.map((item) => (
-                  <tr key={item.id} style={styles.tr}>
-                    <td style={styles.td}>{item.fornecedor}</td>
-                    <td style={styles.td}>R$ {item.valor.toFixed(2)}</td>
-                    <td style={styles.td}>
-                      <span
-                        style={{
-                          ...styles.statusBadge,
-                          backgroundColor: item.status === "Concluído" ? "#e6fffa" : "#fffaf0",
-                          color: item.status === "Concluído" ? "#234e52" : "#7b341e",
-                        }}
-                      >
-                        {item.status}
-                      </span>
-                    </td>
+                {lucro.map((row) => (
+                  <tr key={row.categoria} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="py-3 font-medium text-gray-800">{row.categoria}</td>
+                    <td className="py-3 text-right text-green-700">{fmt(row.entradas)}</td>
+                    <td className="py-3 text-right text-red-600">{fmt(row.saidas)}</td>
+                    <td className={`py-3 text-right font-semibold ${row.saldo >= 0 ? "text-green-700" : "text-red-600"}`}>{fmt(row.saldo)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </section>
-      </main>
+        </div>
+      )}
 
-      <footer style={styles.footer}>
-        <p>Dashboard integrado à API de Gestão</p>
-      </footer>
+      {/* Categorias de fornecedores */}
+      {dados!.fornecedores.por_categoria.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-6">
+          <h2 className="text-base font-semibold text-gray-800 mb-4">Fornecedores por Categoria</h2>
+          <div className="flex flex-wrap gap-3">
+            {dados!.fornecedores.por_categoria.map((cat) => (
+              <div key={cat.categoria} className="bg-blue-50 text-blue-800 rounded-lg px-4 py-2 text-sm font-medium">
+                {cat.categoria} <span className="ml-2 bg-blue-200 text-blue-900 rounded-full px-2 py-0.5 text-xs">{cat.quantidade}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// Estilizações focadas em formato Dashboard (Limpo e moderno)
-const styles = {
-  container: {
-    backgroundColor: "#f7fafc",
-    minHeight: "100vh",
-    display: "flex",
-    flexDirection: "column" as const,
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-    color: "#2d3748",
-  },
-  loadingText: {
-    fontSize: "1.2rem",
-    fontWeight: "500",
-    color: "#4a5568",
-    margin: "auto",
-  },
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "1rem 2rem",
-    backgroundColor: "#fff",
-    borderBottom: "1px solid #e2e8f0",
-    flexWrap: "wrap" as const,
-    gap: "1rem",
-  },
-  logoWrapper: {
-    maxWidth: "220px",
-  },
-  logo: {
-    width: "100%",
-    height: "auto",
-    objectFit: "contain" as const,
-  },
-  title: {
-    fontSize: "1.5rem",
-    margin: 0,
-    fontWeight: "600",
-  },
-  main: {
-    padding: "2rem",
-    flex: 1,
-    maxWidth: "1200px",
-    width: "100%",
-    margin: "0 auto",
-  },
-  metricsGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
-    gap: "1.5rem",
-    marginBottom: "2.5rem",
-  },
-  card: {
-    backgroundColor: "#fff",
-    padding: "1.5rem",
-    borderRadius: "12px",
-    border: "1px solid #e2e8f0",
-    boxShadow: "0 4px 6px -1px rgba(0,0,0,0.05)",
-  },
-  cardLabel: {
-    fontSize: "0.875rem",
-    color: "#718096",
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.05em",
-    margin: "0 0 0.5rem 0",
-  },
-  cardValue: {
-    fontSize: "2rem",
-    margin: 0,
-    fontWeight: "700",
-  },
-  tableSection: {
-    backgroundColor: "#fff",
-    borderRadius: "12px",
-    border: "1px solid #e2e8f0",
-    padding: "1.5rem",
-    boxShadow: "0 4px 6px -1px rgba(0,0,0,0.05)",
-  },
-  sectionTitle: {
-    fontSize: "1.15rem",
-    margin: "0 0 1rem 0",
-    fontWeight: "600",
-  },
-  tableWrapper: {
-    overflowX: "auto" as const,
-  },
-  table: {
-    width: "100%",
-    borderCollapse: "collapse" as const,
-    textAlign: "left" as const,
-  },
-  thRow: {
-    borderBottom: "2px solid #edf2f7",
-  },
-  th: {
-    padding: "0.75rem 1rem",
-    color: "#718096",
-    fontWeight: "600",
-    fontSize: "0.875rem",
-  },
-  tr: {
-    borderBottom: "1px solid #edf2f7",
-  },
-  td: {
-    padding: "1rem",
-    fontSize: "0.95rem",
-  },
-  statusBadge: {
-    padding: "0.25rem 0.75rem",
-    borderRadius: "9999px",
-    fontSize: "0.8rem",
-    fontWeight: "600",
-  },
-  footer: {
-    padding: "1.5rem",
-    textAlign: "center" as const,
-    fontSize: "0.875rem",
-    color: "#a0aec0",
-    borderTop: "1px solid #e2e8f0",
-    backgroundColor: "#fff",
-  },
-};
+function MetricCard({ label, value, sub, color }: { label: string; value: string | number; sub: string; color: "blue" | "green" | "red" | "amber" }) {
+  const colors = {
+    blue: "bg-blue-50 text-blue-700",
+    green: "bg-green-50 text-green-700",
+    red: "bg-red-50 text-red-700",
+    amber: "bg-amber-50 text-amber-700",
+  };
+  return (
+    <div className={`rounded-xl p-4 ${colors[color]}`}>
+      <p className="text-xs font-medium uppercase tracking-wide opacity-70">{label}</p>
+      <p className="text-2xl font-bold mt-1">{value}</p>
+      <p className="text-xs mt-1 opacity-60">{sub}</p>
+    </div>
+  );
+}
